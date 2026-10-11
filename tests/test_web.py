@@ -242,3 +242,146 @@ def test_own_flag_changes_journal(tmp_path, monkeypatch):
             assert (("phone in pocket" in md) is phone), md
     finally:
         srv.shutdown()
+
+
+def test_conf_word_boundaries():
+    from fieldnotes.web.app import conf_word
+
+    assert conf_word(0.94, 4) == "confident"
+    assert conf_word(0.8, 2) == "confident"
+    assert conf_word(0.79, 3) == "likely"
+    assert conf_word(0.5, 2) == "likely"
+    assert conf_word(0.9, 1) == "uncertain"   # single window
+    assert conf_word(0.49, 5) == "uncertain"  # below 0.5
+
+
+def test_page_size_and_offline_assets():
+    from fieldnotes.web.app import PAGE, PAGE_MAX_BYTES
+
+    assert len(PAGE.encode()) < PAGE_MAX_BYTES
+    for token in ["theme", "lifedetails", "aria-live", "prefers-reduced-motion",
+                  "@media print", ":focus-visible", "<details", "WHAT_TO_UPLOAD.md"]:
+        assert token in PAGE, token
+
+
+def _walk_via_api(tmp_path, monkeypatch, **q):
+    import json
+    import urllib.request
+
+    monkeypatch.setattr(S._base, "get_backend", lambda name: FakeBackend)
+    srv, base = _start(tmp_path)
+    try:
+        req = urllib.request.Request(base + "/api/analyze?date=2026-10-11", data=_wav_bytes(tmp_path),
+                                     headers={"Content-Type": "application/octet-stream"})
+        with urllib.request.urlopen(req) as r:
+            wid = json.loads(r.read())["walk_id"]
+        with urllib.request.urlopen(f"{base}/api/walk?id={wid}") as r:
+            return srv, json.loads(r.read())
+    except BaseException:
+        srv.shutdown()
+        raise
+
+
+def test_walk_windows_built_from_stored_rows(tmp_path, monkeypatch):
+    srv, w = _walk_via_api(tmp_path, monkeypatch)
+    try:
+        assert w["windows"]["n"] == 2  # 6 s file -> 2 real windows
+        assert w["windows"]["filled"] == [True, False]  # detection only at 0 s
+        card = w["cards"][0]
+        assert card["common"] == "Alpha" and card["word"] == "uncertain"
+        assert card["windows_occupied"] == 1 and card["novelty"] == "first_ever"
+        assert card["clip_url"] and card["clip_url"].startswith("/api/clip?")
+    finally:
+        srv.shutdown()
+
+
+def test_clip_serves_saved_audio_and_blocks_traversal(tmp_path, monkeypatch):
+    import urllib.error
+    import urllib.request
+
+    srv, w = _walk_via_api(tmp_path, monkeypatch)
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:%d%s" % (srv.server_port, w["cards"][0]["clip_url"])) as r:
+            assert r.status == 200 and r.headers.get_content_type() == "audio/wav"
+            assert r.read()[:4] == b"RIFF"
+        bad = f"http://127.0.0.1:{srv.server_port}/api/clip?walk=1&name=..%2F..%2Fsecret.wav"
+        try:
+            urllib.request.urlopen(bad)
+            raise AssertionError("expected HTTPError")
+        except urllib.error.HTTPError as e:
+            assert e.code == 404
+    finally:
+        srv.shutdown()
+
+
+def test_journal_badge_truthful(tmp_path, monkeypatch):
+    import json
+    import urllib.request
+
+    monkeypatch.setattr(S._base, "get_backend", lambda name: FakeBackend)
+    srv, base = _start(tmp_path)
+    try:
+        req = urllib.request.Request(base + "/api/analyze?date=2026-10-11", data=_wav_bytes(tmp_path),
+                                     headers={"Content-Type": "application/octet-stream"})
+        with urllib.request.urlopen(req) as r:
+            wid = json.loads(r.read())["walk_id"]
+        req = urllib.request.Request(base + "/api/journal",
+                                     data=json.dumps({"walk_id": wid}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req) as r:
+            j = json.loads(r.read())
+        assert j["badge"] == "template (no LLM)"  # Ollama is off in tests
+    finally:
+        srv.shutdown()
+
+
+def test_journal_badge_llm_path(monkeypatch):
+    from fieldnotes.journal import writer as W
+
+    md, prov = W.write_journal(
+        {"date": "d", "duration_s": 6, "n_windows": 2, "detections": [
+            {"species_common": "Alpha", "species_sci": "SciA", "confidence": 0.9,
+             "count": 2, "novelty": "first_ever", "start_s": 0.0}]},
+        "test-model", generate_fn=lambda *a: "Alpha is great. Go again tomorrow.")
+    assert prov == "llm:test-model"
+    # badge rule mirrors the server: non-template provenance names the model
+    badge = "template (no LLM)" if prov.startswith("template:") else f"written by test-model"
+    assert badge == "written by test-model"
+
+
+def test_sample_note_and_versions(tmp_path, monkeypatch):
+    import json
+    import urllib.request
+
+    monkeypatch.setattr(S._base, "get_backend", lambda name: FakeBackend)
+    srv, base = _start(tmp_path)
+    try:
+        req = urllib.request.Request(base + "/api/analyze?date=2026-10-11", data=_wav_bytes(tmp_path),
+                                     headers={"Content-Type": "application/octet-stream"})
+        with urllib.request.urlopen(req) as r:
+            j = json.loads(r.read())
+        assert j["sample_note"] is True  # own box off by default
+        with urllib.request.urlopen(base + "/api/versions") as r:
+            text = json.loads(r.read())["text"]
+        assert "Bird detector:" in text and "gemma3:4b" in text
+    finally:
+        srv.shutdown()
+
+
+def test_sample_filename_triggers_note_even_when_own(tmp_path, monkeypatch):
+    import json
+    import urllib.request
+
+    monkeypatch.setattr(S._base, "get_backend", lambda name: FakeBackend)
+    srv, base = _start(tmp_path)
+    try:
+        boundary = "B3"
+        body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"wav\"; "
+                f"filename=\"sample.wav\"\r\nContent-Type: audio/wav\r\n\r\n").encode() + \
+            _wav_bytes(tmp_path) + f"\r\n--{boundary}--\r\n".encode()
+        req = urllib.request.Request(base + "/api/analyze?date=2026-10-11&own=1", data=body,
+                                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+        with urllib.request.urlopen(req) as r:
+            assert json.loads(r.read())["sample_note"] is True
+    finally:
+        srv.shutdown()
