@@ -28,10 +28,26 @@ def write_journal(
         if _guard.invented_species(text, known, known_sci):
             text2 = gen(model_name, prompt + "\n\nReminder: name ONLY species from the walk log.", timeout_s)
             if _guard.invented_species(text2, known, known_sci):
-                return _template.render_template(log), "template:guard-failed-twice"
-            return text2, f"llm-regen:{model_name}"
-        return text, f"llm:{model_name}"
+                return _with_scope(_template.render_template(log), log), "template:guard-failed-twice"
+            return _with_scope(text2, log), f"llm-regen:{model_name}"
+        return _with_scope(text, log), f"llm:{model_name}"
     except _llm.OllamaDown as exc:
-        return _template.render_template(log), f"template:{exc}"
+        return _with_scope(_template.render_template(log), log), f"template:{exc}"
     except Exception as exc:  # never let the journal step crash a walk
-        return _template.render_template(log), f"template:unexpected-{type(exc).__name__}"
+        return _with_scope(_template.render_template(log), log), f"template:unexpected-{type(exc).__name__}"
+
+
+def scope_line(log: dict) -> str:
+    """One-line settings note. Never prints coordinates (privacy)."""
+    scope = log.get("scope") or {}
+    return (
+        f"_Settings: date {scope.get('date', log.get('date', '?'))} · "
+        f"location filtering {scope.get('location_filter', '?')} · "
+        f"confidence threshold {scope.get('threshold', '?')}._"
+    )
+
+
+def _with_scope(markdown: str, log: dict) -> str:
+    if not log.get("scope"):
+        return markdown
+    return markdown.rstrip() + "\n\n" + scope_line(log)

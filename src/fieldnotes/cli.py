@@ -23,12 +23,14 @@ def cmd_analyze(args) -> None:
     try:
         summary = _svc.analyze_walk(
             args.wav, cfg, lat=args.lat, lon=args.lon, date=args.date,
-            weather_note=args.weather or "")
+            weather_note=args.weather or "", own_recording=args.own)
     except ValueError as exc:
         print(f"analyze failed: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     print(f"walk {summary['walk_id']}: {summary['n_detections']} detections "
           f"in {summary['n_windows']} windows ({summary['n_gated']} gated as silence)")
+    if summary.get("date_warning"):
+        print(summary["date_warning"])
     for s in summary["species"]:
         print(f"  {s['start_s']:7.1f}s  {s['common']} ({s['sci']})  "
               f"conf={s['confidence']:.2f}  [{s['novelty']}]")
@@ -75,6 +77,8 @@ def main(argv=None) -> None:
     a.add_argument("--lat", type=float, default=None)
     a.add_argument("--lon", type=float, default=None)
     a.add_argument("--date", default=None, help="walk date YYYY-MM-DD (sets season filter)")
+    a.add_argument("--own", action="store_true",
+                   help="this is my own walk recording (changes journal wording)")
     a.add_argument("--weather", default=None, help="optional weather note for the journal")
     a.set_defaults(func=cmd_analyze)
 

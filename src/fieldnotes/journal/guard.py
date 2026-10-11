@@ -7,6 +7,12 @@ import re
 TRIVIA_FLAG = "general knowledge, unverified"
 
 
+def uncertain(d: dict) -> bool:
+    """Shared confidence wording (template, prompt, web table rule): a species is
+    'uncertain' when heard in only one window or its best confidence is below 0.5."""
+    return d.get("count", 0) <= 1 or d.get("confidence", 0.0) < 0.5
+
+
 def _sentences(text: str) -> list[str]:
     return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
 

@@ -39,16 +39,29 @@ def analyze_walk(
     lon: float | None = None,
     date: str | None = None,
     weather_note: str = "",
+    own_recording: bool = False,
 ) -> dict:
     """Full pipeline: windows -> BirdNET -> DB -> clips. Returns a summary dict."""
     backend = _base.get_backend(cfg["bird_backend"])
     glat, glon = resolve_geo(cfg, lat, lon)
+    if date:
+        week_from_date = iso_to_birdnet_week(date)  # validates YYYY-MM-DD even if overridden
+    else:
+        week_from_date = -1
     if cfg["week_override"]:
         week = cfg["week_override"]
     elif date:
-        week = iso_to_birdnet_week(date)
+        week = week_from_date
     else:
         week = -1  # year-round (no date supplied)
+    date_warning = None
+    if date:
+        delta = abs((_dt.date.today() - _dt.date.fromisoformat(date)).days)
+        if delta > 30:
+            date_warning = (
+                f"warning: date {date} is {delta} days from today — the season "
+                f"filter and the journal use it as-is."
+            )
 
     audio, sr = _windows.load_mono(wav_path, 48000)
     if len(audio) < int(round(cfg["window_s"] * sr)):
@@ -89,6 +102,7 @@ def analyze_walk(
             model_name=cfg["bird_backend"],
             model_version=getattr(backend, "MODEL_VERSION", "unknown"),
             config_json=_db.config_snapshot(cfg),
+            is_own_recording=1 if own_recording else 0,
         )
         firsts_saved: list[str] = []
         for d, novelty in labeled:
@@ -107,6 +121,7 @@ def analyze_walk(
         "n_windows": len(wins),
         "n_gated": len(wins) - len(kept),
         "n_detections": len(labeled),
+        "date_warning": date_warning,
         "species": [
             {"common": d.species_common, "sci": d.species_sci,
              "confidence": d.confidence, "start_s": d.start_s, "novelty": n}
@@ -146,13 +161,28 @@ def build_log(cfg: dict, walk_id: int) -> dict:
             "novelty": r["novelty"], "start_s": r["start_s"]})
         slot["count"] += 1
         slot["confidence"] = max(slot["confidence"], r["confidence"])
+    try:
+        import json as _json
+
+        walk_cfg = _json.loads(walk["config_json"] or "{}")
+    except ValueError:
+        walk_cfg = {}
+    window_s = walk_cfg.get("window_s", 3.0) or 3.0
+    n_windows = int(walk["duration_s"] // window_s)  # real full windows stored via duration
+    loc_on = walk["lat"] is not None and walk["lon"] is not None
     return {
-        "place": "unstated location" if walk["lat"] is None else f"{walk['lat']:.3f},{walk['lon']:.3f}",
+        "place": "unstated location" if not loc_on else "filtered location",
         "date": walk["started_at"],
         "duration_s": walk["duration_s"],
-        "n_windows": 0,
+        "n_windows": n_windows,
+        "own_recording": bool(walk["is_own_recording"]),
         "detections": sorted(by_species.values(), key=lambda d: -d["count"]),
         "weather_note": "",
+        "scope": {
+            "date": walk["started_at"],
+            "location_filter": "on" if loc_on else "off",
+            "threshold": walk_cfg.get("confidence_threshold", "?"),
+        },
     }
 
 

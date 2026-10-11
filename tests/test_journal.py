@@ -85,10 +85,10 @@ def test_template_handles_empty_log_and_low_confidence():
 def test_confidence_word_boundaries():
     from fieldnotes.journal import prompt as P
 
-    def log_with(conf):
+    def log_with(conf, count=3):
         return {"date": "d", "duration_s": 3, "n_windows": 1, "detections": [
             {"species_common": "A B", "species_sci": "A b", "confidence": conf,
-             "count": 1, "novelty": "first_ever", "start_s": 0.0}]}
+             "count": count, "novelty": "first_ever", "start_s": 0.0}]}
 
     assert "uncertain" in P.build_prompt(log_with(0.0))
     assert "uncertain" in P.build_prompt(log_with(0.4999))
@@ -135,3 +135,68 @@ def test_prompt_names_only_logged_species():
     p = P.build_prompt(_log())
     assert "Bald Eagle" not in p and "Blue Jay" not in p
     assert "Anna's Hummingbird" in p and "Dark-Eyed Junco" in p
+
+
+def _log2(**over):
+    log = {"date": "2026-10-11", "duration_s": 24, "n_windows": 8,
+           "own_recording": False, "weather_note": "",
+           "scope": {"date": "2026-10-11", "location_filter": "off",
+                     "threshold": 0.3},
+           "detections": [
+               {"species_common": "Eurasian Blackbird", "species_sci": "Turdus merula",
+                "confidence": 1.0, "count": 4, "novelty": "first_ever", "start_s": 0.0},
+               {"species_common": "Lone Tit", "species_sci": "Tit lonely",
+                "confidence": 0.9, "count": 1, "novelty": "first_ever", "start_s": 9.0}]}
+    log.update(over)
+    return log
+
+
+def test_template_own_flag_wording():
+    from fieldnotes.journal import template as T
+
+    off = T.render_template(_log2(own_recording=False))
+    assert "A 24-second recording." in off and "phone in pocket" not in off
+    on = T.render_template(_log2(own_recording=True))
+    assert "A 24-second walk, phone in pocket, eyes up." in on
+
+
+def test_template_window_counts_not_hearings():
+    from fieldnotes.journal import template as T
+
+    md = T.render_template(_log2())
+    assert "hear" not in md.lower().replace("heard", "X").replace("hearings", "X")
+    assert "detected in 4 of 8 listening windows" in md
+    assert "highest confidence 1.00" in md
+
+
+def test_template_uncertain_single_window_and_low_conf():
+    from fieldnotes.journal import template as T
+
+    md = T.render_template(_log2())
+    lone = [l for l in md.splitlines() if "Lone Tit" in l][0]
+    assert "(uncertain)" in lone  # single window despite 0.9
+    low = _log2(detections=[
+        {"species_common": "Dim Finch", "species_sci": "Finch dim",
+         "confidence": 0.4, "count": 5, "novelty": "x", "start_s": 0.0}])
+    assert "(uncertain)" in T.render_template(low)
+
+
+def test_scope_line_no_coordinates():
+    from fieldnotes.journal import writer as W
+
+    md, _ = W.write_journal(_log2(), "m", generate_fn=lambda *a: "Eurasian Blackbird ok. Go again.")
+    assert "location filtering off" in md and "threshold 0.3" in md
+    assert "60.17" not in md and "24.94" not in md
+
+
+def test_prompt_window_wording_and_own_rules():
+    from fieldnotes.journal import prompt as P
+
+    p = P.build_prompt(_log2())
+    assert "hearings" not in p.replace("never 'hearings'", "")
+    assert "listening windows" in p
+    assert "detected in 4 of 8 listening windows" in p
+    assert "heard 4x" not in p
+    assert "Never write 'phone in pocket" in p
+    p2 = P.build_prompt(_log2(own_recording=True))
+    assert "may include the phrase 'phone in pocket" in p2

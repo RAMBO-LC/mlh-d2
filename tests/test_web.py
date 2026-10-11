@@ -171,7 +171,7 @@ def test_unfriendly_files_point_to_prepare(tmp_path, monkeypatch):
         body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"wav\"; "
                 f"filename=\"song.mp3\"\r\nContent-Type: audio/mpeg\r\n\r\n").encode() + \
             b"\x00" * 2000 + f"\r\n--{boundary}--\r\n".encode()
-        req = urllib.request.Request(base + "/api/analyze", data=body,
+        req = urllib.request.Request(base + "/api/analyze?date=2026-10-11", data=body,
                                      headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
         try:
             urllib.request.urlopen(req)
@@ -180,12 +180,65 @@ def test_unfriendly_files_point_to_prepare(tmp_path, monkeypatch):
             assert e.code == 400 and "get_audio.py prepare" in e.read().decode()
         # under 3 seconds
         short = make_wav(str(tmp_path / "short.wav"), seconds=1.0)
-        req2 = urllib.request.Request(base + "/api/analyze", data=open(short, "rb").read(),
+        req2 = urllib.request.Request(base + "/api/analyze?date=2026-10-11",
+                                      data=open(short, "rb").read(),
                                       headers={"Content-Type": "application/octet-stream"})
         try:
             urllib.request.urlopen(req2)
             raise AssertionError("expected HTTPError")
         except urllib.error.HTTPError as e:
             assert e.code == 400 and "get_audio.py prepare" in e.read().decode()
+    finally:
+        srv.shutdown()
+
+
+def test_date_required_and_warning(tmp_path, monkeypatch):
+    import json
+    import urllib.error
+    import urllib.request
+
+    monkeypatch.setattr(S._base, "get_backend", lambda name: FakeBackend)
+    srv, base = _start(tmp_path)
+    try:
+        payload = _wav_bytes(tmp_path)
+        req = urllib.request.Request(base + "/api/analyze", data=payload,
+                                     headers={"Content-Type": "application/octet-stream"})
+        try:
+            urllib.request.urlopen(req)
+            raise AssertionError("expected HTTPError")
+        except urllib.error.HTTPError as e:
+            assert e.code == 400 and "date is required" in e.read().decode()
+        req = urllib.request.Request(base + "/api/analyze?date=2020-01-01", data=payload,
+                                     headers={"Content-Type": "application/octet-stream"})
+        with urllib.request.urlopen(req) as r:
+            j = json.loads(r.read())
+        assert j.get("date_warning", "").startswith("warning: date 2020-01-01")
+        req = urllib.request.Request(base + "/api/analyze?date=2026-10-11", data=payload,
+                                     headers={"Content-Type": "application/octet-stream"})
+        with urllib.request.urlopen(req) as r:
+            assert json.loads(r.read()).get("date_warning") is None
+    finally:
+        srv.shutdown()
+
+
+def test_own_flag_changes_journal(tmp_path, monkeypatch):
+    import json
+    import urllib.request
+
+    monkeypatch.setattr(S._base, "get_backend", lambda name: FakeBackend)
+    srv, base = _start(tmp_path)
+    try:
+        for own, want, phone in [("", "recording", False), ("&own=1", "walk", True)]:
+            req = urllib.request.Request(
+                base + f"/api/analyze?date=2026-10-11{own}", data=_wav_bytes(tmp_path),
+                headers={"Content-Type": "application/octet-stream"})
+            with urllib.request.urlopen(req) as r:
+                wid = json.loads(r.read())["walk_id"]
+            req = urllib.request.Request(base + "/api/journal", data=json.dumps(
+                {"walk_id": wid}).encode(), headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req) as r:
+                md = json.loads(r.read())["markdown"]
+            assert f"second {want}" in md
+            assert (("phone in pocket" in md) is phone), md
     finally:
         srv.shutdown()

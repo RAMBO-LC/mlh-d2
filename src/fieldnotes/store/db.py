@@ -43,6 +43,11 @@ def connect(db_path: str) -> sqlite3.Connection:
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA_V1)
+    try:  # migration v1->v2: per-walk "my own recording" flag (default off)
+        con.execute("ALTER TABLE walks ADD COLUMN is_own_recording INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column" not in str(exc).lower():
+            raise
     return con
 
 

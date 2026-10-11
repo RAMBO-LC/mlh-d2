@@ -33,13 +33,23 @@ label{display:block;margin-top:.5rem}
 <p><em>Tip: upload a 48 kHz mono WAV at least 3 s long. Anything else? Run
 <code>python scripts/get_audio.py prepare YOURFILE</code> first — see docs/WHAT_TO_UPLOAD.md in the repo.</em></p>
 <form id="up" aria-label="Upload a walk recording">
-<label>Recording (WAV) <input type="file" name="wav" accept=".wav,.flac,.ogg" required></label>
-<label>Date <input type="date" name="date"></label>
+<label>Recording (WAV) <input type="file" name="wav" id="wav" accept=".wav,.flac,.ogg" required></label>
+<label>Date of recording <input type="date" name="date" id="date" required></label>
+<label><input type="checkbox" name="own" id="own" value="1"> This is my own recording</label>
 <label>Lat <input type="text" name="lat" inputmode="decimal" placeholder="optional"></label>
 <label>Lon <input type="text" name="lon" inputmode="decimal" placeholder="optional"></label>
 <label>Weather note <input type="text" name="weather" placeholder="cool, overcast…"></label>
 <button type="submit">Analyze</button>
 </form>
+<script>/* defaults: today; prefer the file's own modified date until the user picks one */
+const dEl=document.getElementById("date"), wEl=document.getElementById("wav");
+let dateTouched=false;
+dEl.addEventListener("change",()=>{dateTouched=true;});
+function todayStr(){return new Date().toISOString().slice(0,10);}
+dEl.value=todayStr();
+wEl.addEventListener("change",()=>{if(!dateTouched&&wEl.files.length){
+  dEl.value=new Date(wEl.files[0].lastModified).toISOString().slice(0,10);}});
+</script>
 <div id="res" role="status"></div>
 <h2>2. Journal</h2>
 <div id="journal"><p>No journal yet — analyze a walk first.</p></div>
@@ -57,13 +67,15 @@ $("up").onsubmit=async e=>{e.preventDefault();
   const fd=new FormData(e.target);
   const lat=num(fd.get("lat")), lon=num(fd.get("lon"));
   const q=new URLSearchParams({date:fd.get("date")||"",weather:fd.get("weather")||"",
-    lat:lat===null?"":lat,lon:lon===null?"":lon});
+    lat:lat===null?"":lat,lon:lon===null?"":lon,
+    own:document.getElementById("own").checked?"1":""});
   const r=await fetch("/api/analyze?"+q,{method:"POST",body:fd.get("wav")});
   const j=await r.json();
   if(!r.ok){$("res").textContent="Error: "+(j.error||r.status);return;}
   walkId=j.walk_id;
   $("res").innerHTML=`<p>Walk ${j.walk_id}: <strong>${j.n_detections}</strong> detections. `+
-    j.species.map(s=>`${s.common} <span class="badge">${s.novelty}</span> (${s.confidence.toFixed(2)})`).join(", ")+"</p>";
+    j.species.map(s=>`${s.common} <span class="badge">${s.novelty}</span> (${s.confidence.toFixed(2)})`).join(", ")+"</p>"+
+    (j.date_warning?`<p><strong>Warning:</strong> ${j.date_warning}</p>`:"");
   journal();life();
 };
 async function journal(){if(walkId===null)return;
@@ -172,6 +184,12 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, TypeError):
                 return None
 
+        datestr = (q.get("date", [""])[0] or "").strip()
+        if not datestr:
+            return self._json({"error": "date is required: pick the recording date "
+                                        "(it drives the season filter and the journal)"}, 400)
+        own = (q.get("own", [""])[0] == "1")
+
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
             tf.write(raw)
             tmp = tf.name
@@ -180,8 +198,9 @@ class Handler(BaseHTTPRequestHandler):
                 summary = _svc.analyze_walk(
                     tmp, self.cfg,
                     lat=f(q.get("lat")), lon=f(q.get("lon")),
-                    date=(q.get("date", [""])[0] or None),
+                    date=datestr,
                     weather_note=(q.get("weather", [""])[0] or ""),
+                    own_recording=own,
                 )
             except ValueError as exc:
                 return self._json({"error": str(exc)}, 400)

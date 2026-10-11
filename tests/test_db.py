@@ -66,3 +66,23 @@ def test_wipe_twice_is_safe(tmp_path):
     import os
 
     assert not os.path.exists(dbp) and os.listdir(clips) == []
+
+
+def test_migration_adds_own_flag_to_old_db(tmp_path):
+    import sqlite3
+
+    p = str(tmp_path / "old.db")
+    con = sqlite3.connect(p)
+    con.executescript(db.SCHEMA_V1.replace("is_own_recording INTEGER NOT NULL DEFAULT 0,", ""))
+    # simulate a pre-migration DB: drop the column if the base schema ever gains it
+    cols = [r[1] for r in con.execute("PRAGMA table_info(walks)")]
+    if "is_own_recording" in cols:
+        con.execute("ALTER TABLE walks DROP COLUMN is_own_recording")
+    con.commit()
+    con.close()
+    con2 = db.connect(p)
+    try:
+        cols2 = [r[1] for r in con2.execute("PRAGMA table_info(walks)")]
+        assert "is_own_recording" in cols2
+    finally:
+        con2.close()
