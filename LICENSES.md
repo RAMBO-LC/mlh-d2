@@ -33,10 +33,13 @@
    built-in location/week filtering. Perch stays a **config-swappable stub** in Phase 2 until its
    Kaggle weights terms are verified. The swap demo (Phase 9) reports metric deltas only on
    weights whose terms check out.
-2. **Journal LLM default = Qwen3 (`qwen3:4b`) via Ollama (both MIT/Apache-2.0).**
-   This keeps the default path fully under OSI-approved terms. Gemma 3 and Llama remain
-   config-swappable options with their custom-terms obligations documented above — the user
-   opts into those terms by selecting them. Prefer Gemma 4 over Gemma 3 if a Gemma path is wanted.
+2. **Journal LLM default = Gemma 3 (`gemma3:4b`) via Ollama.**
+   Chosen 2026-10-11 for the MVP slice: `gemma3:4b` is the current small Gemma in the
+   Ollama library (3.4 GB, updated 2 days before checking); `gemma4:e4b` (6.6–9.5 GB,
+   Apache-2.0) is the config-swappable alternative. Gemma 3 weights are under the custom
+   Gemma Terms of Use (not OSI open-source) — the user opts into those terms by using
+   the default; the template fallback uses no model at all. Qwen3 (Apache-2.0) remains
+   a config-only swap.
 3. **TTS = legacy Piper (MIT) + one allowlisted voice (`en_US-libritts-high`, CC-BY 4.0).**
    Do NOT default to `OHF-Voice/piper1-gpl` (GPL-3.0 copyleft) without a conscious decision.
    Pin `piper-tts` + voice file hash in the setup script; record the voice MODEL_CARD in
