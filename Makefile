@@ -1,7 +1,7 @@
 PY := .venv/bin/python
 export PYTHONPATH := src
 
-.PHONY: setup test test-slow run offline-demo clean-data
+.PHONY: setup test test-slow run offline-demo clean-data sample prepare sample-xc
 
 setup:
 	@test -x /opt/homebrew/bin/python3.12 || test "$$(python3 -c 'import sys; print(sys.version_info >= (3,11))')" = "True" || (echo "need Python 3.11+ on PATH"; exit 1)
@@ -25,3 +25,14 @@ offline-demo:
 clean-data:
 	rm -rf data/fieldnotes.db data/clips data/journals
 	@echo "local data removed (config + code untouched)."
+
+sample:
+	$(PY) scripts/get_audio.py bundled
+
+prepare:
+	@test -n "$(FILE)" || (echo "usage: make prepare FILE=path/to/audio.m4a"; exit 1)
+	$(PY) scripts/get_audio.py prepare "$(FILE)"
+
+sample-xc:
+	@test -n "$(ID)" || (echo "usage: make sample-xc ID=476378  (needs XENO_CANTO_API_KEY)"; exit 1)
+	$(PY) scripts/get_audio.py xc "$(ID)"
