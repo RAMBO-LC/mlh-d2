@@ -1,0 +1,31 @@
+# Field Notes — single configuration file. Everything configurable lives here.
+# Copy to config.yaml and edit. GPS is OFF by default (opt-in).
+
+bird_backend: birdnet        # birdnet (only working backend in MVP; perch listed for future)
+confidence_threshold: 0.3    # minimum confidence kept from the detector (0.0-1.0)
+window_s: 3.0                # analysis window length in seconds (BirdNET native: 3s)
+overlap_s: 0.0               # overlap between windows in seconds
+
+# Location / season filter for BirdNET (reduces false positives).
+# Put YOUR coordinates in config.local.yaml (git-ignored, sits next to this file) —
+# this file stays generic so it is safe to commit.
+region_lat: 0.0
+region_lon: 0.0
+week_override: 0             # 0 = derive week from --date / file date; 1-48 force a week
+language: en                 # species common-name language
+
+debounce_minutes: 10         # same species not re-logged as "new" within N minutes
+
+# Journal LLM (local, via Ollama). Name must be an installed Ollama tag.
+llm_name: gemma3:4b
+llm_timeout_s: 120
+
+# Privacy. GPS off by default; audio clips stored locally only.
+privacy:
+  gps_enabled: false         # set true to attach lat/lon + optional track to a walk
+  save_clips: true           # save a short verification clip per first-of-walk species
+
+tts_voice: none              # MVP has no spoken output (live-mic/TTS cut; see README Future work)
+
+database: data/fieldnotes.db
+clips_dir: data/clips
