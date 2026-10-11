@@ -55,7 +55,8 @@ def analyze_walk(
         have = len(audio) / sr
         raise ValueError(
             f"audio is only {have:.1f}s long — need at least one {cfg['window_s']:.0f}s "
-            f"window. Record a longer clip and try again."
+            f"window. Convert a longer recording with "
+            f"`python scripts/get_audio.py prepare <file>` (see docs/WHAT_TO_UPLOAD.md)."
         )
     wins = _windows.make_windows(audio, sr, cfg["window_s"], cfg["overlap_s"])
     kept = [w for w in wins if w.kept]

@@ -30,6 +30,8 @@ label{display:block;margin-top:.5rem}
 <h1>Field Notes</h1>
 <p>Screen is for setup + recap only. Go outside; the pocket does the work.</p>
 <h2>1. Analyze a walk</h2>
+<p><em>Tip: upload a 48 kHz mono WAV at least 3 s long. Anything else? Run
+<code>python scripts/get_audio.py prepare YOURFILE</code> first — see docs/WHAT_TO_UPLOAD.md in the repo.</em></p>
 <form id="up" aria-label="Upload a walk recording">
 <label>Recording (WAV) <input type="file" name="wav" accept=".wav,.flac,.ogg" required></label>
 <label>Date <input type="date" name="date"></label>
@@ -160,7 +162,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "uploaded file is empty or too small"}, 400)
         suffix = Path(filename).suffix.lower() or ".wav"
         if suffix not in (".wav", ".flac", ".ogg"):
-            return self._json({"error": f"unsupported audio type {suffix!r} (wav/flac/ogg)"}, 400)
+            return self._json({"error": f"unsupported audio type {suffix!r}: upload a WAV "
+                                        "(see docs/WHAT_TO_UPLOAD.md), or convert it first with "
+                                        "`python scripts/get_audio.py prepare <file>`"}, 400)
 
         def f(v):
             try:

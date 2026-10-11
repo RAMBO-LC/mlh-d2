@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 data/
+.env
 *.walk.json
 .DS_Store
 # never commit: personal location, models, or walk audio

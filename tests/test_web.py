@@ -148,3 +148,44 @@ def test_bad_upload_gives_4xx_with_message(tmp_path, monkeypatch):
                 assert "error" in e.read().decode().lower()
     finally:
         srv.shutdown()
+
+
+def test_upload_hint_present_and_offline():
+    from fieldnotes.web.app import PAGE
+
+    assert "48 kHz mono WAV" in PAGE and "get_audio.py prepare" in PAGE
+    assert "WHAT_TO_UPLOAD.md" in PAGE
+
+
+def test_unfriendly_files_point_to_prepare(tmp_path, monkeypatch):
+    import urllib.error
+    import urllib.request
+
+    from .helpers import make_wav
+
+    monkeypatch.setattr(S._base, "get_backend", lambda name: FakeBackend)
+    srv, base = _start(tmp_path)
+    try:
+        # not a WAV (mp3 suffix via multipart)
+        boundary = "B2"
+        body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"wav\"; "
+                f"filename=\"song.mp3\"\r\nContent-Type: audio/mpeg\r\n\r\n").encode() + \
+            b"\x00" * 2000 + f"\r\n--{boundary}--\r\n".encode()
+        req = urllib.request.Request(base + "/api/analyze", data=body,
+                                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+        try:
+            urllib.request.urlopen(req)
+            raise AssertionError("expected HTTPError")
+        except urllib.error.HTTPError as e:
+            assert e.code == 400 and "get_audio.py prepare" in e.read().decode()
+        # under 3 seconds
+        short = make_wav(str(tmp_path / "short.wav"), seconds=1.0)
+        req2 = urllib.request.Request(base + "/api/analyze", data=open(short, "rb").read(),
+                                      headers={"Content-Type": "application/octet-stream"})
+        try:
+            urllib.request.urlopen(req2)
+            raise AssertionError("expected HTTPError")
+        except urllib.error.HTTPError as e:
+            assert e.code == 400 and "get_audio.py prepare" in e.read().decode()
+    finally:
+        srv.shutdown()
