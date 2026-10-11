@@ -51,6 +51,12 @@ def analyze_walk(
         week = -1  # year-round (no date supplied)
 
     audio, sr = _windows.load_mono(wav_path, 48000)
+    if len(audio) < int(round(cfg["window_s"] * sr)):
+        have = len(audio) / sr
+        raise ValueError(
+            f"audio is only {have:.1f}s long — need at least one {cfg['window_s']:.0f}s "
+            f"window. Record a longer clip and try again."
+        )
     wins = _windows.make_windows(audio, sr, cfg["window_s"], cfg["overlap_s"])
     kept = [w for w in wins if w.kept]
 
@@ -63,6 +69,8 @@ def analyze_walk(
         overlap_s=cfg["overlap_s"],
         language=cfg["language"],
     )
+    # Enforce the configured threshold regardless of backend (boundaries: >= keeps).
+    detections = [d for d in detections if d.confidence >= cfg["confidence_threshold"]]
 
     con = _db.connect(cfg["database"])
     try:

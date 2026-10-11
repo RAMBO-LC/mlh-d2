@@ -16,7 +16,7 @@ No audio is committed as of 2026-10-11 (Phase 0). Before any `.wav` is added:
 
 | File | Species | Source URL | License | Recordist / credit | Verified on |
 |---|---|---|---|---|---|
-| _none yet_ | — | — | — | — | — |
+| _no committed audio_ — test fixture is `sample.wav` shipped inside the `birdnet-analyzer` 2.4.0 PyPI package (`checkpoints/V2.4/.../static/sample.wav`), used in place, never copied into the repo | Lesser Redpoll (model top-1, 0.94) | n/a (ships with https://github.com/birdnet-team/BirdNET-Analyzer) | Same terms as BirdNET weights (CC BY-NC-SA 4.0); used locally only, not redistributed | BirdNET team (packaged test file) | 2026-10-11 |
 
 ## Rules
 - Every row needs source URL + license + date verified.

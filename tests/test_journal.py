@@ -80,3 +80,58 @@ def test_template_handles_empty_log_and_low_confidence():
     log2 = dict(log, detections=[{"species_common": "X", "species_sci": "Y",
                                   "confidence": 0.2, "count": 1}])
     assert "uncertain" in template.render_template(log2)
+
+
+def test_confidence_word_boundaries():
+    from fieldnotes.journal import prompt as P
+
+    def log_with(conf):
+        return {"date": "d", "duration_s": 3, "n_windows": 1, "detections": [
+            {"species_common": "A B", "species_sci": "A b", "confidence": conf,
+             "count": 1, "novelty": "first_ever", "start_s": 0.0}]}
+
+    assert "uncertain" in P.build_prompt(log_with(0.0))
+    assert "uncertain" in P.build_prompt(log_with(0.4999))
+    line = [l for l in P.build_prompt(log_with(0.5)).splitlines() if l.startswith("- ")][0]
+    assert "uncertain" not in line and "0.50" in line
+    # NOTE (MVP scope): the only confidence wording is "uncertain" vs the number.
+    # "likely"/"confident" TTS words were cut with live mode — no such mapping exists.
+
+
+def test_guard_scientific_and_case_insensitive():
+    assert guard.invented_species("Acanthis cabaret visited.", {"Lesser Redpoll"},
+                                  {"Acanthis cabaret"}) == []
+    # Title-Case variant of the scientific name is exempt via the sci set…
+    assert guard.invented_species("Acanthis Cabaret visited.", {"Lesser Redpoll"},
+                                  {"Acanthis cabaret"}) == []
+    # …but flags without it:
+    assert guard.invented_species("Acanthis Cabaret visited.", {"Lesser Redpoll"}) != []
+    assert guard.invented_species("LESSER REDPOLL again.", {"Lesser Redpoll"}) == []
+    bad = guard.invented_species("A BALD EAGLE soared.", {"Lesser Redpoll"})
+    assert any("BALD EAGLE" in p for p in bad)
+
+
+def test_fallback_on_timeout_and_empty():
+    def timeout_gen(*a):
+        raise TimeoutError("slow")
+
+    md, prov = writer.write_journal(_log(), "m", generate_fn=timeout_gen)
+    assert prov.startswith("template:") and "Anna's Hummingbird" in md
+
+    md2, prov2 = writer.write_journal(_log(), "m", generate_fn=lambda *a: "   ")
+    assert prov2.startswith("template:") and "Species of the day" in md2
+
+
+def test_zero_detection_journal_invents_nothing():
+    from fieldnotes.journal import template as T
+
+    md = T.render_template({"date": "2026-10-11", "duration_s": 9, "detections": []})
+    assert guard.invented_species(md, set()) == []
+
+
+def test_prompt_names_only_logged_species():
+    from fieldnotes.journal import prompt as P
+
+    p = P.build_prompt(_log())
+    assert "Bald Eagle" not in p and "Blue Jay" not in p
+    assert "Anna's Hummingbird" in p and "Dark-Eyed Junco" in p

@@ -20,13 +20,14 @@ def write_journal(
     gen = generate_fn or _llm.generate
     prompt = _prompt.build_prompt(log)
     known = {d["species_common"] for d in log.get("detections", [])}
+    known_sci = {d["species_sci"] for d in log.get("detections", [])}
     try:
         text = gen(model_name, prompt, timeout_s)
         if not text.strip():
             raise _llm.OllamaDown("empty response")
-        if _guard.invented_species(text, known):
+        if _guard.invented_species(text, known, known_sci):
             text2 = gen(model_name, prompt + "\n\nReminder: name ONLY species from the walk log.", timeout_s)
-            if _guard.invented_species(text2, known):
+            if _guard.invented_species(text2, known, known_sci):
                 return _template.render_template(log), "template:guard-failed-twice"
             return text2, f"llm-regen:{model_name}"
         return text, f"llm:{model_name}"

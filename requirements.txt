@@ -1,0 +1,14 @@
+# Pinned runtime + test deps (Python 3.12.14, macOS arm64, verified 2026-10-11).
+# Regenerate on your machine with: .venv/bin/pip freeze | grep -i -E "birdnet|numpy|scipy|soundfile|yaml|pytest|librosa|tensorflow|keras|tqdm|requests|matplotlib"
+birdnet_analyzer==2.4.0
+numpy==2.5.4
+scipy==1.18.1
+soundfile==0.14.0
+PyYAML==6.0.3
+pytest==9.1.1
+librosa==1.0.0
+tensorflow==2.21.0
+keras==3.15.1
+tqdm==4.70.1
+requests==2.34.2
+matplotlib==3.11.2

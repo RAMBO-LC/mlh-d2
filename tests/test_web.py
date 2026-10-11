@@ -66,3 +66,85 @@ def test_web_flow(tmp_path, monkeypatch):
             assert json.loads(r.read()) == []
     finally:
         srv.shutdown()
+
+
+def test_html_has_no_external_references():
+    from fieldnotes.web.app import PAGE
+
+    import re
+
+    assert "http://127" not in PAGE and "https://" not in PAGE, \
+        "page must not reference external assets"
+    assert not re.search(r'https?://(?!127\.0\.0\.1)', PAGE)
+
+
+def test_server_binds_localhost_only(tmp_path):
+    import threading
+    from http.server import HTTPServer
+
+    from fieldnotes.web.app import Handler
+
+    Handler.cfg = {"database": str(tmp_path / "x.db"), "clips_dir": str(tmp_path / "c")}
+    srv = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        assert srv.server_address[0] == "127.0.0.1"
+    finally:
+        srv.shutdown()
+
+
+def test_exports_match_db(tmp_path, monkeypatch):
+    import csv
+    import io
+    import urllib.request
+
+    from fieldnotes.store import db
+
+    monkeypatch.setattr(S._base, "get_backend", lambda name: FakeBackend)
+    srv, base = _start(tmp_path)
+    try:
+        with urllib.request.urlopen(base + "/api/analyze?date=2026-10-11",
+                                    data=_wav_bytes(tmp_path)) as r:
+            j = __import__("json").loads(r.read())
+        con = db.connect(str(tmp_path / "w.db"))
+        try:
+            rows = db.walk_detections(con, j["walk_id"])
+        finally:
+            con.close()
+        with urllib.request.urlopen(base + f"/api/export?id={j['walk_id']}&fmt=csv") as r:
+            exported = list(csv.DictReader(io.StringIO(r.read().decode())))
+        assert len(exported) == len(rows) == 1
+        assert exported[0]["scientific"] == rows[0]["species_sci"]
+        assert float(exported[0]["confidence"]) == rows[0]["confidence"]
+        with urllib.request.urlopen(base + f"/api/export?id={j['walk_id']}&fmt=md") as r:
+            md = r.read().decode()
+        assert "Alpha" in md and "## Detections" in md
+    finally:
+        srv.shutdown()
+
+
+def _wav_bytes(tmp_path):
+    from .helpers import make_wav
+
+    p = make_wav(str(tmp_path / "u.wav"), seconds=6.0)
+    return open(p, "rb").read()
+
+
+def test_bad_upload_gives_4xx_with_message(tmp_path, monkeypatch):
+    import urllib.error
+
+    monkeypatch.setattr(S._base, "get_backend", lambda name: FakeBackend)
+    srv, base = _start(tmp_path)
+    try:
+        for body, ctype in [(b"", "application/octet-stream"),
+                            (b"not audio at all" * 10, "application/octet-stream")]:
+            req = urllib.request.Request(base + "/api/analyze", data=body,
+                                         headers={"Content-Type": ctype})
+            try:
+                urllib.request.urlopen(req)
+                raise AssertionError("expected HTTPError")
+            except urllib.error.HTTPError as e:
+                assert 400 <= e.code < 500
+                assert "error" in e.read().decode().lower()
+    finally:
+        srv.shutdown()

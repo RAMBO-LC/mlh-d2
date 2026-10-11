@@ -47,3 +47,11 @@ def test_pipeline_runs_with_external_network_blocked(tmp_path, monkeypatch, no_e
     md, prov, model = S.journal_for_walk(cfg, summary["walk_id"])
     assert prov.startswith("template:") and "Alpha" in md
     assert no_external_network == [], f"external connections attempted: {no_external_network}"
+
+
+def test_deliberate_external_attempt_fails(no_external_network):
+    import socket
+
+    with __import__("pytest").raises(ConnectionError, match="network blocked"):
+        socket.create_connection(("203.0.11.99", 80), timeout=2)
+    assert no_external_network == ["203.0.11.99"]

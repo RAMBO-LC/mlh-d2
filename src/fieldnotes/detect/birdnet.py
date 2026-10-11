@@ -15,7 +15,7 @@ from contextlib import redirect_stdout
 
 from .base import Detection
 
-MODEL_VERSION = "birdnet-analyzer 2.4.0 (BirdNET GLOBAL_2K_V2.4 model set)"
+MODEL_VERSION = "birdnet-analyzer 2.4.0 (BirdNET GLOBAL_6K_V2.4 checkpoints)"
 
 
 def analyze_file(
