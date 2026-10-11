@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+*.walk.json
+.DS_Store
+# never commit: personal location, models, or walk audio
+config.local.yaml
+*.wav *.mp3 *.m4a *.flac *.ogg *.opus
+*.tflite *.pt *.bin *.onnx *.ckpt
+checkpoints/
